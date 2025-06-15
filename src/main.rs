@@ -13,7 +13,7 @@ use ratatui::{
     DefaultTerminal,
     layout::{Layout, Constraint, Rect},
     style::{Style, Color, Modifier},
-    widgets::Paragraph,
+    widgets::{Paragraph, Block, Borders},
 };
 
 mod page;
@@ -24,8 +24,17 @@ use page::MainPage;
 const APP_NAME: &str = "Terminal Velocity";
 
 fn main() -> io::Result<()> {
+    let debug = std::env::var("DEBUG")
+        .is_ok_and(|v| v == "1" || v.to_lowercase() == "true");
+
+    let mut app = App {
+        debug,
+        ..Default::default()
+    };
+
+    let mut stdout = io::stdout();
     let mut terminal = ratatui::init();
-    let app_result = App::with_debug().run(&mut terminal);
+    let app_result = app.run(&mut terminal);
     ratatui::restore();
     app_result
 }
@@ -52,12 +61,6 @@ impl Default for App {
 }
 
 impl App {
-    fn with_debug() -> Self {
-        let mut app = App::default();
-        app.debug = true;
-        app
-    }
-
     fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         // Main Loop
         while !self.exit {
@@ -80,34 +83,47 @@ impl App {
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         if key_event.kind == KeyEventKind::Press {
-            match key_event.code {
-                // KeyCode::Char('q') | KeyCode::Esc => self.exit = true,
-                KeyCode::Char('c') => {
-                    if key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
-                        self.exit = true;
-                    }
-                },
-                _ => {}
+            if let KeyCode::Char('c') = key_event.code {
+                if key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
+                    self.exit = true;
+                }
             }
         }
+    }
+
+    fn active_page(&self) -> &dyn Page {
+        self.pages.last().unwrap().as_ref()
     }
 
     fn draw(&mut self, frame: &mut Frame) {
         self.frame = self.frame.wrapping_add(1);
 
         let vertical = Layout::vertical([
-            Constraint::Length(1),
+            Constraint::Length(2),
             Constraint::Min(1),
             Constraint::Length(1),
         ]);
 
-        let areas = vertical.areas::<3>(frame.area());
-        let header = areas[0];
+        let [
+            header_area,
+            page_area,
+            footer_area
+        ] = vertical.areas::<3>(frame.area());
 
-        self.draw_header(frame, header);
+        self.draw_header(frame, header_area);
+        self.draw_page(frame, page_area);
+        self.draw_footer(frame, footer_area);
     }
 
-    fn draw_header(&self, frame: &mut Frame, header: Rect) {
+    fn draw_header(&self, frame: &mut Frame, header_space: Rect) {
+        let [header, line] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1)
+        ]).areas::<2>(header_space);
+
+        let border = Block::new().borders(Borders::BOTTOM);
+        frame.render_widget(border, line);
+
         let constraints = [
             Constraint::Min(APP_NAME.len() as u16 + 2),
             Constraint::Fill(1),
@@ -125,7 +141,7 @@ impl App {
         frame.render_widget(app_title, horizontal[0]);
 
         let page_title_style = Style::default().add_modifier(Modifier::BOLD);
-        let page_title_text = self.pages.last().unwrap().page_title();
+        let page_title_text = self.active_page().page_title();
         let page_title = Paragraph::new(page_title_text)
             .style(page_title_style)
             .centered();
@@ -138,5 +154,19 @@ impl App {
 
             frame.render_widget(debug_text, horizontal[2]);
         }
+    }
+
+    fn draw_footer(&self, frame: &mut Frame, header: Rect) {
+        let footer_style = Style::default().fg(Color::Gray);
+        let footer_text = Paragraph::new("Press Ctrl+C to exit")
+            .style(footer_style)
+            .centered();
+
+        frame.render_widget(footer_text, header);
+    }
+
+    fn draw_page(&mut self, frame: &mut Frame, area: Rect) {
+        let active_page = self.pages.last_mut().unwrap();
+        active_page.draw(frame, area);
     }
 }
