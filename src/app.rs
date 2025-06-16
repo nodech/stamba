@@ -24,9 +24,7 @@ const APP_NAME: &str = "Terminal Velocity";
 pub enum AppAction {
     None,
     Exit,
-    GoBack,
     GoTo(Box<dyn Page>),
-    Replace(Box<dyn Page>),
 }
 
 #[derive(Debug)]
@@ -79,17 +77,26 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
-        if key_event.kind == KeyEventKind::Press {
-            if let KeyCode::Char('c') = key_event.code {
+        match key_event.code {
+            KeyCode::Char('c') => {
                 if key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
                     self.exit = true;
                 }
-            }
+            },
+            KeyCode::Esc => {
+                if self.pages.len() > 1 {
+                    self.pages.pop();
+                }
+            },
+            _ => {},
         }
     }
 
     fn handle_action(&mut self, action: AppAction) {
         match action {
+            AppAction::GoTo(page) => {
+                self.pages.push(page);
+            },
             AppAction::Exit => { self.exit = true },
             _ => {},
         }
@@ -166,7 +173,7 @@ impl App {
 
     fn draw_footer(&self, frame: &mut Frame, header: Rect) {
         let footer_style = Style::default().fg(Color::Gray);
-        let footer_text = Paragraph::new("Press Ctrl+C to exit")
+        let footer_text = Paragraph::new("Ctrl+C to exit, ESC to back")
             .style(footer_style)
             .centered();
 

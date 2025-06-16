@@ -12,6 +12,7 @@ use ratatui::widgets::{List, ListState, ListItem};
 
 use crate::app::AppAction;
 use super::Page;
+use super::GamePage;
 
 const SELECTED_STYLE: Style = Style::new()
     .add_modifier(Modifier::BOLD)
@@ -59,7 +60,7 @@ impl Default for MenuPage {
             MenuItem {
                 name: "Quick Game".to_string(),
                 action: || -> AppAction {
-                    AppAction::None
+                    AppAction::GoTo(Box::new(GamePage::new()))
                 }
             },
             MenuItem {

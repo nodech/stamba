@@ -10,6 +10,9 @@ use crate::app::AppAction;
 pub mod home;
 pub use home::MenuPage;
 
+pub mod game;
+pub use game::GamePage;
+
 pub trait Page: Debug {
     fn page_title(&self) -> &str;
     fn draw(&mut self, frame: &mut Frame, rect: Rect);
