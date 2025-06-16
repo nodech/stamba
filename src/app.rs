@@ -21,6 +21,15 @@ use super::page::{Page, MenuPage};
 const APP_NAME: &str = "Terminal Velocity";
 
 #[derive(Debug)]
+pub enum AppAction {
+    None,
+    Exit,
+    GoBack,
+    GoTo(Box<dyn Page>),
+    Replace(Box<dyn Page>),
+}
+
+#[derive(Debug)]
 pub struct App {
     pub debug: bool,
     pub frame: u32,
@@ -46,15 +55,21 @@ impl App {
         // Main Loop
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
-            self.active_page_mut().handle_events()?;
             self.handle_events()?;
+
+            let page_action = self.active_page_mut().action();
+            self.handle_action(page_action);
         }
 
         Ok(())
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
-        match event::read()? {
+        let some_event = event::read()?;
+
+        self.active_page_mut().handle_events(&some_event);
+
+        match some_event {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 self.handle_key_event(key_event);
             },
@@ -70,6 +85,13 @@ impl App {
                     self.exit = true;
                 }
             }
+        }
+    }
+
+    fn handle_action(&mut self, action: AppAction) {
+        match action {
+            AppAction::Exit => { self.exit = true },
+            _ => {},
         }
     }
 
