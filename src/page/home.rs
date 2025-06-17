@@ -60,7 +60,7 @@ impl Default for MenuPage {
             MenuItem {
                 name: "Quick Game".to_string(),
                 action: || -> AppAction {
-                    AppAction::GoTo(Box::new(GamePage::new()))
+                    AppAction::GoTo(Box::new(GamePage::default()))
                 }
             },
             MenuItem {

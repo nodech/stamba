@@ -30,7 +30,7 @@ fn main() -> io::Result<()> {
     ];
 
     if let LoadablePages::QuickGame = args.page {
-        pages.push(Box::new(page::GamePage::new()));
+        pages.push(Box::new(page::GamePage::default()));
     }
 
     let mut app = app::App {
