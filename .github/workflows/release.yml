@@ -1,0 +1,91 @@
+name: Release Rust Binaries
+
+on:
+  release:
+    types: [published] # This workflow runs when a new release is published
+
+jobs:
+  build_and_release:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false # Allows other builds to continue even if one fails
+      matrix:
+        include:
+          # Linux build
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu # Standard Linux target (glibc)
+            archive_ext: tar.gz
+            binary_ext: ""
+            runner_arch: x64
+
+          # Windows build
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc # Standard Windows target
+            archive_ext: zip
+            binary_ext: ".exe"
+            runner_arch: x64
+
+          # macOS (Intel) build
+          - os: macos-latest
+            target: x86_64-apple-darwin # Standard macOS Intel target
+            archive_ext: tar.gz
+            binary_ext: ""
+            runner_arch: x64
+
+          # macOS (Apple Silicon/ARM64) build
+          - os: macos-14
+            target: aarch64-apple-darwin # Standard macOS ARM64 target
+            archive_ext: tar.gz
+            binary_ext: ""
+            runner_arch: arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get the release version from the tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Build project
+        run: |
+          BINARY_NAME="terminal-velocity"
+          # The 'cargo build' command will automatically use the correct toolchain and target
+          # as set up by dtolnay/rust-toolchain
+          BUILD_COMMAND="cargo build --release --target ${{ matrix.target }}"
+
+          echo "Running build command: $BUILD_COMMAND"
+          ${{ runner.os == 'Windows' && 'powershell.exe -Command ' || '' }}$BUILD_COMMAND
+        shell: bash
+
+      - name: Create archive
+        run: |
+          BINARY_NAME="terminal-velocity"
+          ARCHIVE_DIR="$BINARY_NAME-${{ env.VERSION }}-${{ matrix.target }}"
+          mkdir "$ARCHIVE_DIR"
+
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            mv "target/${{ matrix.target }}/release/$BINARY_NAME.exe" "$ARCHIVE_DIR/"
+            7z a "$ARCHIVE_DIR.zip" "$ARCHIVE_DIR"
+            echo "ASSET_PATH=$ARCHIVE_DIR.zip" >> $GITHUB_ENV
+          else
+            mv "target/${{ matrix.target }}/release/$BINARY_NAME" "$ARCHIVE_DIR/"
+            tar -czvf "$ARCHIVE_DIR.tar.gz" "$ARCHIVE_DIR"
+            echo "ASSET_PATH=$ARCHIVE_DIR.tar.gz" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET_PATH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
