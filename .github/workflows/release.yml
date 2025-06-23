@@ -57,7 +57,7 @@ jobs:
 
       - name: Build project
         run: |
-          BINARY_NAME="terminal-velocity"
+          BINARY_NAME="stamba"
           # The 'cargo build' command will automatically use the correct toolchain and target
           # as set up by dtolnay/rust-toolchain
           BUILD_COMMAND="cargo build --release --target ${{ matrix.target }}"
@@ -68,7 +68,7 @@ jobs:
 
       - name: Create archive
         run: |
-          BINARY_NAME="terminal-velocity"
+          BINARY_NAME="stamba"
           ARCHIVE_DIR="$BINARY_NAME-${{ env.VERSION }}-${{ matrix.target }}"
           mkdir "$ARCHIVE_DIR"
 
