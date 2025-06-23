@@ -2,6 +2,8 @@
 name = "stamba"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "Practice typing in your terminal."
 
 [dependencies]
 clap = { version = "4.5.40", features = ["derive"] }
