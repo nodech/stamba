@@ -1,12 +1,6 @@
 use std::io;
 
-use crossterm::event::{
-    self,
-    Event,
-    KeyCode,
-    KeyEvent,
-    KeyEventKind,
-};
+use crossterm::event as cse;
 
 use ratatui::{
     Frame,
@@ -16,16 +10,11 @@ use ratatui::{
     widgets::{Paragraph, Block, Borders},
 };
 
-use super::page::{Page, MenuPage};
+use crate::events::{AppEventSource, AppEvent, AppAction};
 
-const APP_NAME: &str = "Terminal Velocity";
+use super::page::{self, Page, PageHandleEvent, LoadablePage};
 
-#[derive(Debug)]
-pub enum AppAction {
-    None,
-    Exit,
-    GoTo(Box<dyn Page>),
-}
+const APP_NAME: &str = "Stamba";
 
 #[derive(Debug)]
 pub struct App {
@@ -33,7 +22,9 @@ pub struct App {
     pub frame: u32,
     pub exit: bool,
 
-    pub pages: Vec<Box<dyn Page>>
+    pub app_events: Option<AppEventSource>,
+
+    pages: Vec<Box<dyn Page>>,
 }
 
 impl Default for App {
@@ -43,47 +34,97 @@ impl Default for App {
             debug: false,
             frame: 0,
 
-            pages: vec![Box::new(MenuPage::default())]
+            app_events: None,
+            pages: vec![page::get_page(LoadablePage::MainMenu)],
         }
     }
 }
 
+// Constructors
 impl App {
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+    pub fn new() -> Self {
+        App {
+            ..Default::default()
+        }
+    }
+
+    pub fn debug(mut self, debug: bool) -> Self {
+        self.debug = debug;
+        self
+    }
+}
+
+// app loop
+impl App {
+    pub async fn init(&mut self) -> io::Result<()> {
+        self.app_events = Some(AppEventSource::init().await);
+
+        Ok(())
+    }
+
+    pub async fn shutdown(&mut self) -> io::Result<()> {
+        if let Some(mut events) = self.app_events.take() {
+            events.shutdown().await;
+        }
+
+        Ok(())
+    }
+
+    pub async fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        assert!(self.app_events.is_some(),
+            "AppEvents must be initialized before running the app");
+
         // Main Loop
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events()?;
+            let events = self.app_events.as_mut().unwrap().collect_events().await;
 
-            let page_action = self.active_page_mut().action();
-            self.handle_action(page_action);
+            for event in events.into_iter() {
+                self.handle_event(event)?;
+            }
         }
 
         Ok(())
     }
 
-    fn handle_events(&mut self) -> io::Result<()> {
-        let some_event = event::read()?;
+    fn handle_event(&mut self, event: AppEvent) -> io::Result<()> {
+        let dispatcher = self.app_events.as_ref().unwrap().get_dispatcher();
+        let page = self.get_active_page_mut();
 
-        self.active_page_mut().handle_events(&some_event);
+        if let PageHandleEvent::Consume = page.handle_event(dispatcher, &event) {
+            return Ok(())
+        }
 
-        match some_event {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event);
+        match event {
+            AppEvent::Crossterm(cse) => {
+                self.handle_cse_event(cse)
+            },
+            AppEvent::App(action) => {
+                self.handle_action(action);
+                Ok(())
+            }
+        }
+    }
+
+    fn handle_cse_event(&mut self, event: cse::Event) -> io::Result<()> {
+        match event {
+            cse::Event::Key(key_event) if key_event.kind == cse::KeyEventKind::Press => {
+                self.handle_cse_key_event(key_event);
             },
             _ => {}
         }
+
         Ok(())
     }
 
-    fn handle_key_event(&mut self, key_event: KeyEvent) {
+    fn handle_cse_key_event(&mut self, key_event: cse::KeyEvent) {
         match key_event.code {
-            KeyCode::Char('c') => {
-                if key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
+            cse::KeyCode::Char('c') => {
+                if key_event.modifiers.contains(cse::KeyModifiers::CONTROL) {
                     self.exit = true;
                 }
             },
-            KeyCode::Esc => {
+            cse::KeyCode::Esc => {
                 if self.pages.len() > 1 {
                     self.pages.pop();
                 }
@@ -94,22 +135,30 @@ impl App {
 
     fn handle_action(&mut self, action: AppAction) {
         match action {
-            AppAction::GoTo(page) => {
-                self.pages.push(page);
-            },
+            AppAction::GoTo(page) => { self.go_to_page(page) },
             AppAction::Exit => { self.exit = true },
-            _ => {},
         }
     }
+}
 
-    fn active_page(&self) -> &dyn Page {
+// Implement page management.
+impl App {
+    fn get_active_page(&self) -> &dyn Page {
         self.pages.last().unwrap().as_ref()
     }
 
-    fn active_page_mut(&mut self) -> &mut dyn Page {
+    fn get_active_page_mut(&mut self) -> &mut dyn Page {
         self.pages.last_mut().unwrap().as_mut()
     }
 
+    fn go_to_page(&mut self, page_id: LoadablePage) {
+        let page = page::get_page(page_id);
+        self.pages.push(page);
+    }
+}
+
+// Implement drawing stuff.
+impl App {
     fn draw(&mut self, frame: &mut Frame) {
         self.frame = self.frame.wrapping_add(1);
 
@@ -156,7 +205,7 @@ impl App {
         frame.render_widget(app_title, horizontal[0]);
 
         let page_title_style = Style::default().add_modifier(Modifier::BOLD);
-        let page_title_text = self.active_page().page_title();
+        let page_title_text = self.get_active_page().page_title();
         let page_title = Paragraph::new(page_title_text)
             .style(page_title_style)
             .centered();

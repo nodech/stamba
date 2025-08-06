@@ -1,14 +1,9 @@
+use clap::Parser;
 use std::io;
-use clap::{Parser, ValueEnum};
 
-mod page;
 mod app;
-
-#[derive(Debug, ValueEnum, Clone)]
-enum LoadablePages {
-    QuickGame,
-    Home,
-}
+mod page;
+mod events;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -17,30 +12,22 @@ struct Args {
     debug: bool,
 
     /// Default page to load
-    #[arg(short, long, default_value_t = LoadablePages::Home,
+    #[arg(short, long, default_value = "home",
            value_enum, help = "The page to load on startup")]
-    page: LoadablePages,
+    page: String,
 }
 
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     let args = Args::parse();
 
-    let mut pages: Vec<Box<dyn page::Page>> = vec![
-        Box::new(page::MenuPage::default())
-    ];
-
-    if let LoadablePages::QuickGame = args.page {
-        pages.push(Box::new(page::GamePage::default()));
-    }
-
-    let mut app = app::App {
-        debug: args.debug,
-        pages,
-        ..Default::default()
-    };
+    let mut app = app::App::new()
+        .debug(args.debug);
 
     let mut terminal = ratatui::init();
-    let app_result = app.run(&mut terminal);
+    app.init().await?;
+    app.run(&mut terminal).await?;
     ratatui::restore();
-    app_result
+
+    app.shutdown().await
 }

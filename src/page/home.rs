@@ -1,18 +1,12 @@
-use crossterm::event::{
-    Event,
-    KeyCode,
-    KeyEvent,
-    KeyEventKind,
-};
+use crossterm::event as cse;
 
 use ratatui::Frame;
 use ratatui::layout::{Rect, Layout, Constraint};
 use ratatui::style::{Style, Modifier};
 use ratatui::widgets::{List, ListState, ListItem};
 
-use crate::app::AppAction;
-use super::Page;
-use super::GamePage;
+use crate::events::{AppEventDispatcher, AppAction, AppEvent};
+use super::{LoadablePage, Page, PageHandleEvent};
 
 const SELECTED_STYLE: Style = Style::new()
     .add_modifier(Modifier::BOLD)
@@ -21,7 +15,7 @@ const SELECTED_STYLE: Style = Style::new()
 #[derive(Debug)]
 pub struct MenuItem {
     name: String,
-    action: fn() -> AppAction,
+    action: fn() -> AppEvent,
 }
 
 #[derive(Debug)]
@@ -29,8 +23,6 @@ pub struct MenuPage {
     pub menu_items: Vec<MenuItem>,
     pub menu_max_len: u16,
     pub state: ListState,
-
-    action_todo: AppAction
 }
 
 impl MenuPage {
@@ -48,8 +40,7 @@ impl MenuPage {
         MenuPage {
             menu_items,
             menu_max_len: menu_max_len as u16,
-            state,
-            action_todo: AppAction::None
+            state
         }
     }
 }
@@ -59,14 +50,14 @@ impl Default for MenuPage {
         let items = vec![
             MenuItem {
                 name: "Quick Game".to_string(),
-                action: || -> AppAction {
-                    AppAction::GoTo(Box::new(GamePage::default()))
+                action: || {
+                    AppEvent::App(AppAction::GoTo(LoadablePage::GamePage))
                 }
             },
             MenuItem {
                 name: "Quit".to_string(),
                 action: || {
-                    AppAction::Exit
+                    AppEvent::App(AppAction::Exit)
                 }
             },
         ];
@@ -89,18 +80,19 @@ impl Page for MenuPage {
         frame.render_stateful_widget(list, content, &mut self.state);
     }
 
-    fn handle_events(&mut self, event: &Event) {
+    fn handle_event(&mut self, app_events: AppEventDispatcher, event: &AppEvent) -> PageHandleEvent {
         match event {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_event(key_event);
+            AppEvent::Crossterm(cse) => {
+                self.handle_cse_event(app_events, cse)
             },
-            _ => {}
+            AppEvent::App(_) => {
+                PageHandleEvent::None
+            }
         }
     }
-
-    fn action(&mut self) -> AppAction {
-        std::mem::replace(&mut self.action_todo, AppAction::None)
-    }
+    // fn action(&mut self) -> AppAction {
+    //     std::mem::replace(&mut self.action_todo, AppAction::None)
+    // }
 
     fn page_title(&self) -> &str {
         "Main Page"
@@ -108,26 +100,40 @@ impl Page for MenuPage {
 }
 
 impl MenuPage {
-    fn goto_page(&mut self) {
+    fn handle_page_action(&mut self, event_dispatcher: AppEventDispatcher) {
         let selected = self.state.selected().unwrap();
         let item = &self.menu_items[selected];
 
-        self.action_todo = (item.action)();
+        event_dispatcher.dispatch((item.action)())
     }
 
-    fn handle_event(&mut self, event: &KeyEvent) {
+    fn handle_cse_event(&mut self, event_dispatcher: AppEventDispatcher, event: &cse::Event) -> PageHandleEvent {
+        match event {
+            cse::Event::Key(key_event) if key_event.kind == cse::KeyEventKind::Press => {
+                return self.handle_cse_key_event(event_dispatcher, key_event);
+            },
+            _ => {}
+        }
+
+        PageHandleEvent::None
+    }
+
+
+    fn handle_cse_key_event(&mut self, event_dispatcher: AppEventDispatcher, event: &cse::KeyEvent) -> PageHandleEvent {
         match event.code {
-            KeyCode::Char('k') | KeyCode::Up => {
+            cse::KeyCode::Char('k') | cse::KeyCode::Up => {
                 self.state.select_previous();
             },
-            KeyCode::Char('j') | KeyCode::Down => {
+            cse::KeyCode::Char('j') | cse::KeyCode::Down => {
                 self.state.select_next();
             },
-            KeyCode::Enter => {
-                self.goto_page();
+            cse::KeyCode::Enter => {
+                self.handle_page_action(event_dispatcher)
             },
             _ => {},
         }
+
+        PageHandleEvent::None
     }
 }
 

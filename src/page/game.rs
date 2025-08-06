@@ -1,10 +1,4 @@
-use crossterm::event::{
-    Event,
-    KeyCode,
-    KeyEvent,
-    KeyModifiers,
-};
-
+use crossterm::event as cse;
 use std::time::Instant;
 
 use ratatui::Frame;
@@ -13,10 +7,11 @@ use ratatui::layout::{Rect, Layout, Constraint};
 use ratatui::style::{Style, Modifier, Stylize, Color};
 use ratatui::widgets::{Paragraph, Wrap, Block, Borders};
 
-use crate::app::AppAction;
-use super::Page;
+use crate::events::{AppEventDispatcher, AppEvent};
+use super::{Page, PageHandleEvent};
 
-const DEFAULT_TEXT: &str = include_str!("../../data/example.txt");
+// const DEFAULT_TEXT: &str = include_str!("../../data/example.txt");
+const DEFAULT_TEXT: &str = "Hello world! hello again.";
 
 const STYLE_ACTIVE_WORD: Style = Style::new()
     .add_modifier(Modifier::UNDERLINED);
@@ -133,40 +128,39 @@ impl GamePage {
         }
     }
 
-    fn handle_key(&mut self, event_key: &KeyEvent) {
+    fn handle_key(&mut self, event_key: &cse::KeyEvent) -> PageHandleEvent {
         if self.done {
-            return;
+            return PageHandleEvent::None
         }
 
         if !self.started {
-            if let KeyCode::Enter = event_key.code {
+            if let cse::KeyCode::Enter = event_key.code {
                 self.started = true;
                 self.start_time = Some(Instant::now());
             }
-            return;
+            return PageHandleEvent::None
         }
 
         match event_key.code {
-            KeyCode::Backspace => {
+            cse::KeyCode::Backspace => {
                 self.input_text.pop();
                 self.verify_word();
+                PageHandleEvent::Consume
             },
-            KeyCode::Char(c) => {
-                if event_key.modifiers.contains(KeyModifiers::CONTROL) {
-                    match c {
-                        'w' => {
-                            self.input_text = String::from("");
-                            self.verify_word();
-                            return;
-                        },
-                        _ => {},
-                    }
+            cse::KeyCode::Char(c) => {
+                if event_key.modifiers.contains(cse::KeyModifiers::CONTROL) && c == 'w' {
+                    self.input_text = String::from("");
+                    self.verify_word();
+                    return PageHandleEvent::Consume
                 }
 
                 self.input_text.push(c);
                 self.verify_word();
+                PageHandleEvent::Consume
             },
-            _ => {},
+            _ => {
+                PageHandleEvent::None
+            },
         }
     }
 
@@ -277,17 +271,19 @@ impl Page for GamePage {
         }
     }
 
-    fn handle_events(&mut self, event: &Event) {
+    fn handle_event(&mut self, _: AppEventDispatcher, event: &AppEvent) -> PageHandleEvent {
         match event {
-            Event::Key(event_key) if event.is_key_press() => {
-                self.handle_key(event_key);
+            AppEvent::Crossterm(cse) => {
+                if let cse::Event::Key(key_event) = cse && key_event.kind == cse::KeyEventKind::Press {
+                    self.handle_key(key_event)
+                } else {
+                    PageHandleEvent::None
+                }
             },
-            _ => {},
+            _ => {
+                PageHandleEvent::None
+            },
         }
-    }
-
-    fn action(&mut self) -> AppAction {
-        AppAction::None
     }
 
     fn page_title(&self) -> &str {
